@@ -1,175 +1,86 @@
-# Timesheet automation: Calendar + Zoho Projects → Zoho People
+# Zoho timesheet routine
 
-## What this project is
+Every day, a Claude routine logs **yesterday's work meetings** into Zoho People as time logs.
 
-This project builds my weekly Zoho People timesheet from live sources, so I no longer export Clockify by hand:
+1. It reads the meetings from Google Calendar.
+2. It checks Zoho Projects and my recent Zoho People logs, to pick the same jobs and wording I already use.
+3. It adds the logs.
 
-1. **Calendar.** Read my calendar for the week. Each meeting gives a time block with a title.
-2. **Zoho Projects.** Read the projects and jobs (tasks) I'm assigned to and that are still In-Progress.
-3. **Map.** Map every time block to exactly one Zoho People job. Build a preview and show it to me.
-4. **Push.** After my go-ahead, add the time logs to Zoho People through the API and verify them against live Zoho.
-5. **Submit.** Only after a *second*, separate go-ahead, submit the week for approval.
+I review the week and submit it myself.
 
-**Repo:** https://github.com/MoHatemTC/zoho-timesheet-routine. It's used from Claude routines and shared with the team.
+| Source | How it's reached | Used for |
+|---|---|---|
+| Google Calendar | Claude connector | read meetings |
+| Zoho Projects | Claude connector | read my projects and tasks |
+| Zoho People | API through `zoho_auth.py` | read logs and jobs, add time logs |
 
-**Status (18 Oct 2026):**
-- Built so far: `zoho_auth.py`, `.env.example` and `.gitignore`. `python zoho_auth.py` exchanges a grant code (local only) and smoke-tests both Zoho APIs, read-only.
-- Zoho People works.
-- Zoho Projects returns 401 INVALID_OAUTHSCOPE until a new grant code with `zoho_auth.SCOPES` has been exchanged.
-- Google Calendar isn't connected: `GOOGLE_CALENDAR_ICS_URL` is empty.
-- Not built yet: discover, fetch_calendar, build_preview, push and submit.
+## Daily routine
 
-**Predecessor:** `../claude tiemsheets/`, which exists only on the owner's machine. It is not in this repo, and a cloud routine can't read it. It takes a Clockify CSV and pushes it to Zoho People through the API. It works and has handled every week up to and including Sat 26 Sep – Fri 2 Oct 2026. Port its code and rules rather than rediscovering them:
+The routine prompt is one line: `Run the daily routine in CLAUDE.md.` To redo one day, it can add a date: `... for 2026-10-17`.
 
-| File there | What to reuse |
-|---|---|
-| `zoho_auth.py` | `.env` loader, OAuth refresh with on-disk token cache, `api_get`, `api_get_all` (pagination) |
-| `zoho_discover.py` | Snapshots of projects, jobs and timelogs into `data/` |
-| `mapping_rules.py` | Ordered regex rules that map text to a job key, `since=` date gates, `SPLITS` (80/20, 50/50), plus every mapping call I've already made. Don't re-ask those. |
-| `typos.py` | Spelling cleanup for descriptions |
-| `build_preview.py` | Builds weekly previews into `previews/vN/`; resolves jobs (In-Progress only, exactly one match) |
-| `zoho_push.py` | Throttled writes, ledger, `--sync` (edit in place, delete only on dates the preview covers), `--undo-week` |
-| `zoho_submit.py` | One timesheet per project, named exactly like the Zoho UI names them |
-| `verify_all.py` | Cross-check against live Zoho. The UI can change logs behind the ledger's back. |
+- **Target day:** yesterday in Africa/Cairo time. If the prompt names a date (YYYY-MM-DD), that date only.
+- **This section is my standing OK** to add time logs for the target day. Nothing else may be written.
 
-Copy what you need into this folder. Don't import across folders, and don't modify the old one. It holds the ledger for every week pushed so far.
+### 1. Log in
+Run `pip install requests`, then `python zoho_auth.py`. It must print `✓ Zoho People`. If it doesn't, stop and send me a notification with the error.
 
-## Hard rules
+### 2. Learn how I log my time (Zoho People + Zoho Projects)
+Before mapping anything, line up with what I've already logged and submitted:
+- `zoho_auth.timelogs(<target − 14 days>, <target − 1 day>)` returns my logs from the two weeks before. For each kind of meeting, note:
+  - which project and job I used,
+  - how I wrote the description,
+  - how many hours.
 
-- **Dry run by default.** Any Zoho write (`addtimelog`, `edittimelog`, `deletetimelog`, `createtimesheet`) needs both an `--execute` flag and my explicit OK *for that week* in the conversation.
-- **Pushing and submitting are separate go-aheads.** I review each week's preview before anything is pushed, and again before it is submitted.
-- **The week runs Saturday → Friday**, target ≈ 80h. Older sheets in Zoho use Sun → Sat ranges; don't let them confuse you.
-- **One log per job per day.** Never move a log to another date, and never merge logs across days.
-- **Description format:** one comma-separated line in my own wording. Keep it chronological, remove duplicates and clean the spelling, e.g. `ILF call heba, ILF meeting weekly, squad comm`.
-- **Only In-Progress jobs.** Resolve job ids from a fresh `getjobs` snapshot on every run. Never hard-code ids.
-- **Never overwrite outputs.** Previews go to `previews/vN/` with the next free N; snapshots get a timestamp in their filename.
-- **Live Zoho is the source of truth for what's already logged.** Dedupe against `gettimelogs` for the week, not just a local ledger. The old pipeline keeps its own ledger in `../claude tiemsheets/data/push_ledger.csv`, which this project can't see.
-- **Secrets live only in `.env` (local runs) or in environment variables (cloud routines). Token caches live in `data/`.** The repo's `.gitignore` ignores `.env` and `data/`. **The repo is public**, so never print, echo or commit secret values. When checking setup, read key names only.
-- **A routine run is unattended.** By default it only runs read-only steps, builds the preview and reports it with the totals.
-  - **Pushing from a routine** is allowed only for the exact dates its prompt names with an explicit OK. That OK counts as my go-ahead for those dates. Even then:
-    - only `addtimelog`;
-    - never rows marked NEEDS REVIEW;
-    - never `edittimelog` or `deletetimelog`;
-    - dedupe against live `gettimelogs` first;
-    - read the dates back afterwards and report every new `timeLogId`.
-  - **Submitting** (`createtimesheet`) is never done from a routine. It stays a live-session go-ahead.
+  Logs with `approvalStatus` = `approved` are the strongest guide, because my manager accepted them.
+- `zoho_auth.jobs()` returns my In-Progress jobs. Only these can be logged against.
+- **Zoho Projects connector:**
+  - Call `get_portals` to get the portal id.
+  - Then list my open tasks (owner = me) and their projects.
+  - Use them to understand what each job is for, and to match meeting titles to the right project.
+- `zoho_auth.timelogs(<target>, <target>)` returns what's already logged on the target day.
 
-## Sources and access
+### 3. Read the meetings (Google Calendar connector)
+List my events from 00:00 to 23:59 Cairo time on the target day.
+- **Skip:**
+  - declined or cancelled events
+  - all-day and out-of-office events
+  - events I'm not attending
+  - non-work events
+- **Flag** overlapping meetings in the report instead of dropping them.
 
-### Zoho People: target for reads and writes (works today)
-- Base URL: `https://people.zoho.com/people/api` (data centre `com`).
-- Auth: OAuth Self Client, header `Authorization: Zoho-oauthtoken <access token>`, scope `ZOHOPEOPLE.timetracker.ALL`. A single token covers People and Projects once it carries `zoho_auth.SCOPES`.
-- Credentials:
-  - Local runs: `.env`, copied from `.env.example`.
-  - Cloud routines: the same keys as environment variables. `zoho_auth.load_env()` reads both, and environment variables win.
-  - Grant codes can only be exchanged locally, because the refresh token is written back into `.env`.
-  - Keys:
-    - `ZOHO_DC`
-    - `ZOHO_CLIENT_ID`
-    - `ZOHO_CLIENT_SECRET`
-    - `ZOHO_GRANT_CODE`
-    - `ZOHO_REFRESH_TOKEN`
-    - `ZOHO_USER_EMAIL`
-    - `ZOHO_PROJECTS_PORTAL_ID`
-    - `GOOGLE_CALENDAR_ICS_URL`
-- Endpoints, all under `timetracker/`:
+### 4. Map meetings to jobs
+- Map each meeting to exactly one In-Progress job, chosen the way I chose for similar meetings in step 2.
+- **One log per job per day.** Add up the meetings that go to the same job; hours are written `HH:MM`.
+- **Description** is one comma-separated line of the meeting titles in my wording: chronological, no duplicates, spelling fixed. Example: `weekly squad meeting, sync with content team, demo prep`.
+- **Not sure?** Mark the row `NEEDS REVIEW`. Don't guess.
 
-| Endpoint | Key parameters |
-|---|---|
-| `getprojects` | `assignedTo` |
-| `getjobs` | `assignedTo`, `dateFormat=yyyy-MM-dd` |
-| `gettimelogs` | `user`, `fromDate`, `toDate`, `billingStatus=all` |
-| `addtimelog` | `user`, `jobId`, `workDate`, `hours=HH:MM`, `description` |
-| `edittimelog` | `timeLogId`, plus `workDate` + `jobId` (required in practice) |
-| `deletetimelog` | `timeLogId` (comma-separated, ≤200) |
-| `gettimesheet` | — |
-| `createtimesheet` | `sendforApproval=true` |
+### 5. Push
+- Skip any job that already has a log on the target day (from step 2). Never log the same job twice in a day.
+- For every other row not marked `NEEDS REVIEW`, call `zoho_auth.add_timelog(job_id, '<target>', 'HH:MM', description)`.
+- If a call fails, stop and report the error. Don't retry with different values.
 
-### Zoho Projects: read source (decided 11 Oct: read it directly)
-- Every Zoho People project and job is **synced from Zoho Projects** (portal `782665901`, `ZOHO_PROJECTS_PORTAL_ID` in `.env`). Each record carries `zProjectsPortalId`, `zProjectsProjectRefId` and `zProjectsJobRefId`; use these to join a Projects task to the People `jobId` we log against.
-- Time logged in Zoho People is pushed back to Zoho Projects (`isTimelogPushedToZP`), so **never log time in Zoho Projects directly**: it would double-count.
-- **Read** my projects and tasks from the Zoho Projects V3 API. **Write** only to Zoho People.
-- Base URL: `https://projectsapi.zoho.com/api/v3/portal/{portal}/`. Use `zoho_auth.projects_get()`.
-- Paths seen in the V3 docs:
-  - `projects`
-  - `projects/{id}/tasks`
-  - `projects/{id}/users`
-  - `users`
-  - `users/{id}/projects`
-  - `mytasks/customviews`
-  - `logs`
-  Confirm the filters and paging live; the old `restapi` is being deprecated.
-- Scopes, verified against the V3 docs on 11 Oct, held in `zoho_auth.SCOPES`:
-  - `ZOHOPEOPLE.timetracker.ALL`
-  - `ZohoProjects.portals.READ`
-  - `ZohoProjects.projects.READ`
-  - `ZohoProjects.tasklists.READ`
-  - `ZohoProjects.tasks.READ`
-  - `ZohoProjects.users.READ`
-  - `ZohoProjects.timesheets.READ`
+### 6. Check and report
+- Read the day back with `zoho_auth.timelogs(<target>, <target>)`.
+- Report:
+  - a table with project, job, hours, description, source meetings and status (`pushed` / `already logged` / `NEEDS REVIEW`),
+  - the day's total,
+  - the skipped events, each with its reason.
+- Send me a push notification with the hours logged, the number of logs and anything that needs my decision. If there were no meetings, say: "No work meetings on <day>, nothing logged."
 
-  A new grant code must request **all** of these. Leaving out the People scope would break the writes.
+## Rules
+- **Write only to Zoho People, and only with `add_timelog`.**
+  - Never edit, delete or submit time logs: no `edittimelog`, `deletetimelog` or `createtimesheet`.
+  - I submit the week myself in Zoho People.
+- Never push a `NEEDS REVIEW` row.
+- Never move a log to another date.
+- Never log a meeting that hasn't ended yet.
+- Log only work meetings from the calendar, and don't invent hours to fill gaps.
+- Never commit to this repo from a routine.
+- Secrets live in environment variables (routine) or `.env` (laptop). **The repo is public**, so never print, echo or commit them.
 
-### Google Calendar: meetings (decided 11 Oct; not connected yet)
-Route: the **secret iCal address**. Google Calendar → Settings → my calendar → *Integrate calendar* → *Secret address in iCal format*. It's read-only and needs no OAuth. It goes in `GOOGLE_CALENDAR_ICS_URL` in `.env` and is a secret.
-- Expand recurring events with `recurring_ical_events`; weekly meetings are RRULEs, and a plain parse would miss them.
-- Read my RSVP from the `ATTENDEE;PARTSTAT` entry that matches my email.
-- Not installed yet: `pip install icalendar recurring-ical-events`.
-- Fallback, if the admin has disabled secret addresses: a Google Cloud *Desktop app* OAuth client with scope `https://www.googleapis.com/auth/calendar.readonly`. Keep `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`; cache the token in `data/google_token.json`.
-
-Calendar rules:
-- Convert every event to **Africa/Cairo** with `zoneinfo` before choosing its `workDate`. Egypt has DST, so never use a fixed UTC offset.
-- Skip:
-  - events I declined
-  - cancelled events
-  - all-day events and out-of-office blocks
-  - events with no other attendees, unless they're clearly work blocks
-- Show overlapping events in the review. Don't silently drop or trim them.
-
-## Pipeline (planned)
-
-1. `auth_check`: smoke-test every source with read-only calls.
-2. `discover`: snapshot projects, In-Progress jobs and the week's existing timelogs. Also pull 2–3 months of **approved** timelogs, the best guide to how my manager expects work to be categorised.
-3. `fetch_calendar --week <Sat date>`: write the week's events to `data/`.
-4. `build_preview`:
-   - Map each event title to a job, using the ported mapping rules plus approved history.
-   - Use the Zoho Projects task names in my In-Progress projects as extra matching vocabulary.
-   - Flag anything unmatched for my review; don't guess silently.
-   - Only work meetings are logged, with no gap-filling (decision 1). Show the daily and weekly totals so I can see the shortfall against 80h.
-   - Write `previews/vN/week_<sat>_to_<fri>.csv`.
-5. **I review**, and the rules get updated with my calls (each gated with `since=` so pushed weeks can't re-map).
-6. `push --week <sat>`: dry run, then `--execute`; then verify the minutes against live `gettimelogs`.
-7. `submit --from <sat> --to <fri>`: dry run, then `--execute`. Creates one timesheet per project named `Timesheet (dd/mm/yyyy - dd/mm/yyyy)`. Only on my explicit go-ahead.
-
-## Zoho API gotchas (learned the hard way)
-
-**Rate limits**
-- At most 20 write calls per minute; going over locks the API for 5 minutes. Pace writes at about 17 per minute (one every 3.6 s).
-- Token refreshes are capped at about 10 per 10 minutes; beyond that the token endpoint answers "Access Denied". Cache the access token on disk (`data/.access_token.json`) and reuse it across processes.
-
-**Endpoint quirks**
-- `gettimelogs` returns at most one month per call; split ranges on calendar months.
-- `sIndex` is **1-based**, so pages start at 1, 201, 401…
-- `edittimelog` fails with error 8000 unless both `workDate` and `jobId` are sent.
-- It's `gettimesheet` (singular). `gettimesheets` returns 404.
-
-**Things that can't be changed**
-- Approved logs are locked (`isEditAllowed` / `isDeleteAllowed` are False). Work around them; don't try to edit them.
-
-**Org behaviour verified 14 Sep 2026**
-- Logging up to 7 weeks back works.
-- Weekends aren't rejected. If one is, move the log to the nearest open day and note it in the description.
-- Dates outside a job's from/to window are accepted.
-
-**Sync safety**
-- Never `--sync` with a partial-week preview. Sync may only delete logs on dates the preview actually covers.
-
-**Python**
-- Write regexes as raw strings. A `'\\b'` string patched in through `python -c` once became a literal backspace.
-
-## Decisions (11 Oct 2026)
-
-1. **Work = work meetings.** The timesheet is built from the work meetings on my calendar. Each meeting's duration is logged to the job it maps to. Non-work events are skipped, and nothing is invented to fill the gaps.
-2. **Calendar = Google Calendar**, read through the secret iCal address (see above).
-3. **Zoho Projects is read directly** through the V3 API for my projects and tasks. Writes go to Zoho People only.
-4. **First week = Sat 3 Oct – Fri 9 Oct 2026.** I answered "Fri 9/10/2026", read as the week ending that Friday. Live `gettimelogs` showed nothing logged from 3–10 Oct; 26 Sep – 2 Oct is fully logged (62 logs, approved or pending).
+## Zoho facts
+- The week runs **Saturday → Friday** (Sprints convention), so timesheets cover Sat–Fri ranges.
+- Approved logs are locked; leave them alone.
+- **Writes:** at most 20 per minute, or the API locks for 5 minutes. `add_timelog` already waits 3.6 s between calls.
+- **Token refreshes:** about 10 per 10 minutes. `zoho_auth.py` caches the token, so don't refresh in a loop.
+- `timelogs()` covers at most one month per call.
