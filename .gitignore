@@ -1,0 +1,6 @@
+.env
+data/
+__pycache__/
+*.pyc
+selfconfig.json
+self_client.json
