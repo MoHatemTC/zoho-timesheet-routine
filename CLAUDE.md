@@ -1,6 +1,6 @@
 # Zoho timesheet routine
 
-Every day, a Claude routine logs **yesterday's work meetings** into Zoho People as time logs.
+Every night at **11:59 PM Cairo time**, a Claude routine logs **that day's work meetings** into Zoho People as time logs.
 
 1. It reads the meetings from Google Calendar.
 2. It checks Zoho Projects and my recent Zoho People logs, to pick the same jobs and wording I already use.
@@ -18,7 +18,10 @@ I review the week and submit it myself.
 
 The routine prompt is one line: `Run the daily routine in CLAUDE.md.` To redo one day, it can add a date: `... for 2026-10-17`.
 
-- **Target day:** yesterday in Africa/Cairo time. If the prompt names a date (YYYY-MM-DD), that date only.
+- **Target day:** today's date in Africa/Cairo time (the routine runs at 11:59 PM).
+  - If the run starts after midnight but before 06:00 Cairo time (a late start, or the summer-time hour shift), the target day is **yesterday**.
+  - If the prompt names a date (YYYY-MM-DD), that date only.
+  - Get the time with `python -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('Africa/Cairo')))"`. Never assume the machine's clock is Cairo time.
 - **This section is my standing OK** to add time logs for the target day. Nothing else may be written.
 
 ### 1. Log in
