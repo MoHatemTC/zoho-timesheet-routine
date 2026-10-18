@@ -7,7 +7,7 @@ Every night at **11:59 PM**, Claude reads **the day's meetings** from your Googl
 ## Setup (once)
 
 ### 1. Get your Zoho key (once, on your laptop)
-Zoho never hands out a permanent key directly. It gives a **one-time code** (`ZOHO_GRANT_CODE`) that lasts a few minutes, and `zoho_auth.py` swaps it for a **permanent key** (`ZOHO_REFRESH_TOKEN`). That swap is the only reason for the code and for the `.env` file. The routine itself uses only the permanent key, stored in the cloud environment's variables.
+Zoho never hands out a permanent key directly. It gives a **one-time code** (`ZOHO_GRANT_CODE`) that lasts a few minutes, and `scripts/zoho_auth.py` swaps it for a **permanent key** (`ZOHO_REFRESH_TOKEN`). That swap is the only reason for the code and for the `.env` file. The routine itself uses only the permanent key, stored in the cloud environment's variables.
 
 1. Open **api-console.zoho.com** and choose **Add Client → Self Client**. Copy the **Client ID** and **Client Secret**.
 2. Download this repo, then run `pip install requests`.
@@ -15,7 +15,7 @@ Zoho never hands out a permanent key directly. It gives a **one-time code** (`ZO
 4. In the Self Client, open the **Generate Code** tab and enter the scope `ZOHOPEOPLE.timetracker.ALL`. Paste the code into `ZOHO_GRANT_CODE` in `.env`.
 5. **Right away** (the code expires in minutes), run:
    ```
-   python zoho_auth.py
+   python scripts/zoho_auth.py
    ```
    You should see `✓ Zoho People`. Your `.env` now contains `ZOHO_REFRESH_TOKEN`, and the grant code has been used up. You won't need it again unless you lose the permanent key.
 

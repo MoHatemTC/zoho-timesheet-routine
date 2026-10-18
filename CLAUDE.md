@@ -12,7 +12,7 @@ I review the week and submit it myself.
 |---|---|---|
 | Google Calendar | Claude connector | read meetings |
 | Zoho Projects | Claude connector | read my projects and tasks |
-| Zoho People | API through `zoho_auth.py` | read logs and jobs, add time logs |
+| Zoho People | API through `scripts/zoho_auth.py` | read logs and jobs, add time logs |
 
 ## Daily routine
 
@@ -25,7 +25,9 @@ The routine prompt is one line: `Run the daily routine in CLAUDE.md.` To redo on
 - **This section is my standing OK** to add time logs for the target day. Nothing else may be written.
 
 ### 1. Log in
-Run `pip install requests`, then `python zoho_auth.py`. It must print `✓ Zoho People`. If it doesn't, stop and send me a notification with the error.
+From the repo root, run `pip install requests`, then `python scripts/zoho_auth.py`. It must print `✓ Zoho People`. If it doesn't, stop and send me a notification with the error.
+
+The `zoho_auth.…` calls below are Python helpers in `scripts/zoho_auth.py`. From the repo root, load them with `import sys; sys.path.insert(0, 'scripts'); import zoho_auth`.
 
 ### 2. Learn how I log my time (Zoho People + Zoho Projects)
 Before mapping anything, line up with what I've already logged and submitted:
@@ -85,5 +87,5 @@ List my events from 00:00 to 23:59 Cairo time on the target day.
 - The week runs **Saturday → Friday** (Sprints convention), so timesheets cover Sat–Fri ranges.
 - Approved logs are locked; leave them alone.
 - **Writes:** at most 20 per minute, or the API locks for 5 minutes. `add_timelog` already waits 3.6 s between calls.
-- **Token refreshes:** about 10 per 10 minutes. `zoho_auth.py` caches the token, so don't refresh in a loop.
+- **Token refreshes:** about 10 per 10 minutes. `scripts/zoho_auth.py` caches the token, so don't refresh in a loop.
 - `timelogs()` covers at most one month per call.

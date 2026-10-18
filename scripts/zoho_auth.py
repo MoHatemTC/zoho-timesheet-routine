@@ -3,12 +3,14 @@
 Zoho People login + the three calls the daily routine needs.
 
 One-time setup (your laptop): put ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_USER_EMAIL and a
-fresh ZOHO_GRANT_CODE in .env, then IMMEDIATELY run
-    python zoho_auth.py
+fresh ZOHO_GRANT_CODE in .env (repo root), then IMMEDIATELY run from the repo root
+    python scripts/zoho_auth.py
 It swaps the grant code for a refresh token, saves it in .env, and runs a read-only check.
 
 Routines have no .env file: set the same keys as environment variables (see .env.example)
-and `python zoho_auth.py` just runs the check. Secrets are never printed.
+and `python scripts/zoho_auth.py` just runs the check. Secrets are never printed.
+
+Other code imports it with:  import sys; sys.path.insert(0, 'scripts'); import zoho_auth
 
 Google Calendar and Zoho Projects are read through Claude connectors, not from here.
 """
@@ -21,9 +23,9 @@ import time
 
 import requests
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(HERE, '.env')
-TOKEN_CACHE = os.path.join(HERE, 'data', '.access_token.json')  # data/ is gitignored
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # repo root (this file is in scripts/)
+ENV_PATH = os.path.join(ROOT, '.env')
+TOKEN_CACHE = os.path.join(ROOT, 'data', '.access_token.json')  # data/ is gitignored
 
 SCOPE = 'ZOHOPEOPLE.timetracker.ALL'  # Self Client -> Generate Code -> scope
 ENV_KEYS = ('ZOHO_DC', 'ZOHO_CLIENT_ID', 'ZOHO_CLIENT_SECRET', 'ZOHO_GRANT_CODE', 'ZOHO_REFRESH_TOKEN',
@@ -126,7 +128,7 @@ def access_token(env=None):
         pass
     env = env or load_env()
     if not env.get('ZOHO_REFRESH_TOKEN'):
-        sys.exit("✘ No ZOHO_REFRESH_TOKEN in .env or the environment — run `python zoho_auth.py` on your laptop first.")
+        sys.exit("✘ No ZOHO_REFRESH_TOKEN in .env or the environment — run `python scripts/zoho_auth.py` on your laptop first.")
     data = _token_request(env, grant_type='refresh_token', refresh_token=env['ZOHO_REFRESH_TOKEN'])
     _TOKEN.update(value=data['access_token'], expires=time.time() + int(data.get('expires_in', 3600)) - 120)
     os.makedirs(os.path.dirname(TOKEN_CACHE), exist_ok=True)
