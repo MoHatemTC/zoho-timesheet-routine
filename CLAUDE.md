@@ -45,7 +45,14 @@ Copy what you need into this folder. Don't import across folders, and don't modi
 - **Never overwrite outputs.** Previews go to `previews/vN/` with the next free N; snapshots get a timestamp in their filename.
 - **Live Zoho is the source of truth for what's already logged.** Dedupe against `gettimelogs` for the week, not just a local ledger. The old pipeline keeps its own ledger in `../claude tiemsheets/data/push_ledger.csv`, which this project can't see.
 - **Secrets live only in `.env` (local runs) or in environment variables (cloud routines). Token caches live in `data/`.** The repo's `.gitignore` ignores `.env` and `data/`. **The repo is public**, so never print, echo or commit secret values. When checking setup, read key names only.
-- **A routine run is unattended.** It may only run read-only steps and build the preview. It never passes `--execute`. It finishes by reporting the preview and totals, so I can give the go-ahead in a live session.
+- **A routine run is unattended.** By default it only runs read-only steps, builds the preview and reports it with the totals.
+  - **Pushing from a routine** is allowed only for the exact dates its prompt names with an explicit OK. That OK counts as my go-ahead for those dates. Even then:
+    - only `addtimelog`;
+    - never rows marked NEEDS REVIEW;
+    - never `edittimelog` or `deletetimelog`;
+    - dedupe against live `gettimelogs` first;
+    - read the dates back afterwards and report every new `timeLogId`.
+  - **Submitting** (`createtimesheet`) is never done from a routine. It stays a live-session go-ahead.
 
 ## Sources and access
 
